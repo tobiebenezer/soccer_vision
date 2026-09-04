@@ -1,0 +1,35 @@
+# Kaggle YOLOv8 Training Configuration
+# Tuned for high resolution and small object (ball) preservation
+
+# Model selection
+model: yolov8s.pt          # Start with yolov8s or yolov8m; export to yolov8n for edge inference
+
+# Image resolution
+# Crucial: 960 or 1280 preserves small ball pixels (640 often shrinks the ball to < 4 pixels)
+imgsz: 960
+
+# Training hyperparameters
+epochs: 60
+batch: 8                   # Adjust depending on Kaggle GPU VRAM (P100: 16GB, T4: 15GB)
+workers: 4
+patience: 15               # Early stopping patience
+save_period: 10            # Save checkpoint every 10 epochs
+
+# Optimizer & learning rate
+optimizer: AdamW
+lr0: 0.001
+lrf: 0.01
+
+# Augmentation settings tuned for soccer broadcast
+mosaic: 0.8                # Keeps multi-scale context
+mixup: 0.1
+fliplr: 0.5                # Horizontal flip is invariant on a soccer pitch
+flipud: 0.0                # Pitches should never be flipped vertically
+degrees: 0.0               # Keep camera perspective upright
+scale: 0.3                 # Random scale factor
+
+# Evaluation
+val: true
+plots: true
+save: true
+exist_ok: true

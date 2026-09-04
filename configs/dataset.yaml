@@ -1,0 +1,18 @@
+# YOLOv8 Dataset Configuration
+# Standard 4-Class Team-Agnostic Schema
+
+# Root path relative to YOLO run location or absolute
+path: ../data/labeled
+
+# Splits
+train: images/train
+val: images/val
+test: images/test
+
+# 4-class team-agnostic labeling schema
+# Team identity is resolved downstream via kit clustering and match rosters
+names:
+  0: player
+  1: goalkeeper
+  2: referee
+  3: ball
