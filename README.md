@@ -78,35 +78,44 @@ sqlite3 soccer_analytics.db < schema/schema.sql
 
 ---
 
-## Sourcing NPL Footage Data
+## Sourcing NPFL Footage Data (Nigeria Premier Football League)
 
-1. **State Federation YouTube Channels (1080p Public Broadcasts)**:
-   - [Football NSW YouTube](https://www.youtube.com/@footballnsw) (Men's & Women's full matches)
-   - [Football Victoria YouTube](https://www.youtube.com/@footballfedvic)
-   - [BarTV Sports](https://www.youtube.com)
-   - Download sample match clips using `yt-dlp`:
+1. **Official NPFL YouTube Channel (HD Streams & Match Replays)**:
+   - The NPFL streams selected league fixtures live and makes full match replays available in HD on YouTube via their official broadcast channels.
+   - Use `yt-dlp` to download match segments for training and frame extraction:
      ```bash
      yt-dlp -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" \
-       --download-sections "*00:10:00-00:20:00" \
-       "<YOUTUBE_URL>" -o "npl_clip.mp4"
+       --download-sections "*00:15:00-00:25:00" \
+       "<NPFL_YOUTUBE_URL>" -o "npfl_clip.mp4"
      ```
-2. **NPL.tv**:
-   - Official OTT platform ([npl.tv](https://www.npl.tv)) with match replays across multiple state federations.
-3. **Club Sideline Cameras (Veo / Hudl)**:
-   - High-tripod wide-angle tactical footage obtained from club coaches/analysts in exchange for match reports.
+2. **Official NPFL Live App**:
+   - The primary official platform for streaming live NPFL fixtures worldwide, accessible on iOS and Android.
+3. **NPFL Club YouTube Channels**:
+   - Many NPFL clubs upload their own high-quality full match broadcasts, tactical camera footage, and highlights:
+     - **Sporting Lagos FC** (`@SportingLagos` on YouTube)
+     - **Remo Stars SC** (`@RemoStarsSC` on YouTube)
+     - **Enyimba FC** (`@EnyimbaFC` on YouTube)
+     - **Kano Pillars FC** (`@KanoPillarsFC_Official` on YouTube)
+     - **Rangers International FC** & **Rivers United FC**
+4. **Key NPFL Venue Benchmarks**:
+   - Camera elevation and pitch surfaces vary across Nigerian venues:
+     - *Mobolaji Johnson Arena (Onikan, Lagos)*: High gantry main camera, artificial turf.
+     - *Remo Stars Stadium (Ikenne)*: Dedicated high tactical camera tower, hybrid turf.
+     - *Godswill Akpabio International Stadium (Uyo)*: National stadium broadcast angles, natural grass.
+     - *Enyimba International Stadium (Aba)*: Compact grandstand angle.
 
 ---
 
 ## Recommended Bounding Box Labeling Workflow
 
-For labeling your own NPL footage:
+For labeling your own NPFL match footage:
 1. Extract frames at 1 frame every 2 seconds:
    ```bash
-   python scripts/extract_frames.py --video-path match.mp4 --venue lambert_park --cam cam_main --match-id match01 --sample-rate-fps 0.5
+   python scripts/extract_frames.py --video-path npfl_match.mp4 --venue mobolaji_johnson_arena --cam cam_main --match-id sporting_lagos_vs_enyimba_w01 --sample-rate-fps 0.5
    ```
 2. Upload video or extracted frames to **[CVAT (cvat.ai)](https://cvat.ai)** or use **[AnyLabeling](https://github.com/vietanhdev/anylabeling)** desktop app.
 3. Use CVAT's **linear interpolation** across frames (draw a box on frame 0 and frame 40, CVAT interpolates frames 1–39 automatically).
-4. Export annotations in **YOLO 1.1** format and place into `data/raw/npl_footage/`.
+4. Export annotations in **YOLO 1.1** format and place into `data/raw/npfl_footage/`.
 
 ---
 

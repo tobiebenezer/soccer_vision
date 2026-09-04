@@ -37,20 +37,20 @@ def parse_args():
     parser.add_argument(
         "--venue",
         type=str,
-        default="venue01",
-        help="Name/identifier of the venue (e.g., lambert_park, cromer_park)"
+        default="mobolaji_johnson_arena",
+        help="Name/identifier of the venue (e.g., mobolaji_johnson_arena, remo_stars_stadium, godswill_akpabio_stadium)"
     )
     parser.add_argument(
         "--cam",
         type=str,
         default="cam_main",
-        help="Camera identifier (e.g., cam_main, cam_tactical, cam_veo)"
+        help="Camera identifier (e.g., cam_main, cam_tactical, cam_gantry)"
     )
     parser.add_argument(
         "--match-id",
         type=str,
-        default="npl_match_01",
-        help="Unique match identifier"
+        default="npfl_match_01",
+        help="Unique match identifier (e.g. sporting_lagos_vs_enyimba_w01)"
     )
     parser.add_argument(
         "--sample-rate-fps",

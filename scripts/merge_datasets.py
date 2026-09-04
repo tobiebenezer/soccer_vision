@@ -220,6 +220,7 @@ def main():
     sources = [
         ("soccernet", raw_root / "soccernet", "MIT"),
         ("roboflow", raw_root / "roboflow", "CC-BY-4.0"),
+        ("npfl_footage", raw_root / "npfl_footage", "Proprietary/Internal"),
         ("npl_footage", raw_root / "npl_footage", "Proprietary/Internal")
     ]
 
