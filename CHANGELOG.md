@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0] - 2026-09-05
+
+### Added
+- **1-Click Open Soccer Dataset Downloader** (`scripts/download_open_dataset.py`):
+  - Directly downloads pre-annotated soccer YOLO detection data (`Adit-jain/Soccana_player_ball_detection_v1`) from Hugging Face.
+  - Zero API keys and zero authentication required.
+  - Automatically extracts and stages up to 1,000 images with players, referees, and balls.
+- **Offline Synthetic Sample Data Generator** (`scripts/create_sample_data.py`):
+  - Generates realistic soccer pitch images and valid YOLO bounding boxes for instant offline smoke-testing in 5 seconds.
+- **`open_soccer` and `sample_soccer` Ingestion** (`scripts/merge_datasets.py`):
+  - Ingests and remaps new open dataset sources into unified staging and `manifest.csv`.
+
+### Fixed & Enhanced
+- **SoccerNet-GSR Zip Extraction Overhaul** (`scripts/download_soccernet.py`):
+  - Fixed repository endpoint to official `SoccerNet/SN-GSR-2024`.
+  - Switched default download from 25 GB training set to compact `valid.zip` (~3 GB).
+  - Implemented selective Zip stream extraction: extracts only the first $N$ match sequences requested (`--max-matches`), preventing Kaggle disk space exhaustion.
+  - Added automatic `.zip` cleanup after extraction.
+- **Kaggle Notebook Polish** (`notebooks/kaggle_phase0_phase1.ipynb`):
+  - Rebuilt all 21 notebook cells with strict cell-type validation (`markdown` vs `code`).
+  - Added explicit choices for Option A (1-click open dataset), Option B (SoccerNet GSR), Option C (Offline sample test), and Option D (NPFL YouTube video extraction via `yt-dlp`).
+  - Added ONNX export and per-class AP50 validation display.
+
+---
+
 ## [0.1.0] - 2026-09-04
 
 ### Added
