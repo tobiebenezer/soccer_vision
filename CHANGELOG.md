@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.1] - 2026-09-05
+
+### Added
+- **Self-Contained Kaggle Environment Initialization**:
+  - Notebook Cell 1 now automatically detects if running inside a Kaggle session (`/kaggle/working`), clones `soccer_vision` from GitHub, navigates into the repo directory, and checks for GPU acceleration.
+  - Guarantees zero `FileNotFoundError` or script path errors when importing the notebook into Kaggle.
+- **Root Runner Notebook** (`kaggle_run.ipynb`):
+  - Created a mirror of the notebook at the repository root for convenient drag-and-drop upload into Kaggle.
+- **1-Click Model Weight Export for Kaggle UI**:
+  - Added an automated export cell copying trained `best.pt` and `best.onnx` into `/kaggle/working/exported_models/`, making model weights immediately downloadable from Kaggle's "Output" tab without navigating subfolders.
+
+---
+
 ## [0.2.0] - 2026-09-05
 
 ### Added
