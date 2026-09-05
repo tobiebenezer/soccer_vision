@@ -28,9 +28,11 @@ soccer_monitor/
 │   ├── calibration/                # Homography matrices per venue/camera
 │   └── manifest.csv                # Master image tracking & provenance
 ├── scripts/
-│   ├── download_soccernet.py       # Public SoccerNet-V3 / GameState downloader (MIT)
+│   ├── download_open_dataset.py    # 1-Click HuggingFace soccer dataset downloader (Zero API keys)
+│   ├── download_soccernet.py       # SoccerNet-GSR GameState downloader & zip extractor
 │   ├── download_roboflow.py        # Roboflow downloader with strict CC-BY/MIT license check
-│   ├── extract_frames.py           # NPL video frame extraction with systematic naming
+│   ├── create_sample_data.py       # Instant offline sample generator for smoke testing
+│   ├── extract_frames.py           # NPFL video frame extraction with systematic naming
 │   ├── calibrate_pitch.py          # N >= 4 points RANSAC pitch homography calculator
 │   ├── merge_datasets.py           # 4-class remapper & manifest generator
 │   ├── split_by_match.py           # Strict match-level partition (zero frame leakage)

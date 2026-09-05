@@ -218,10 +218,12 @@ def main():
     staging_labels.mkdir(parents=True, exist_ok=True)
 
     sources = [
-        ("soccernet", raw_root / "soccernet", "MIT"),
+        ("open_soccer", raw_root / "open_soccer", "CC-BY-4.0"),
+        ("soccernet", raw_root / "soccernet", "MIT / GPL-3.0"),
         ("roboflow", raw_root / "roboflow", "CC-BY-4.0"),
         ("npfl_footage", raw_root / "npfl_footage", "Proprietary/Internal"),
-        ("npl_footage", raw_root / "npl_footage", "Proprietary/Internal")
+        ("npl_footage", raw_root / "npl_footage", "Proprietary/Internal"),
+        ("sample_soccer", raw_root / "sample_soccer", "Open-Access")
     ]
 
     all_records = []

@@ -2,24 +2,25 @@
 """
 download_soccernet.py
 
-Downloads detection assets from the public SoccerNet-V3 / SoccerNet GameState dataset
-hosted on Hugging Face Hub (MIT license, no NDA required).
+Downloads and converts SoccerNet-GSR (Game State Reconstruction / Detection) dataset
+from Hugging Face Hub (SoccerNet/SN-GSR-2024 or SoccerNet/SN-GSR-2025).
 
-Converts annotations into standard YOLO format:
-  class_id x_center y_center width height (normalized 0.0 - 1.0)
-Mapping:
-  0: player
-  1: goalkeeper
-  2: referee
-  3: ball
+The dataset is stored on HF as zip archives (valid.zip, train.zip).
+This script:
+1. Downloads the specified zip archive (defaults to 'valid.zip' which is fast and compact).
+2. Selectively extracts only up to --max-matches sequences (saving massive disk space on Kaggle).
+3. Converts SoccerNet GameState annotations to standard 4-class YOLO format:
+     0: player, 1: goalkeeper, 2: referee, 3: ball
 """
 
 import os
 import sys
 import json
+import zipfile
 import shutil
 import argparse
 from pathlib import Path
+
 try:
     from tqdm import tqdm
 except ImportError:
@@ -27,197 +28,249 @@ except ImportError:
         return iterable
 
 
-
-CLASS_MAPPING = {
-    "player": 0,
-    "players": 0,
-    "goalkeeper": 1,
-    "goalkeepers": 1,
-    "gk": 1,
-    "referee": 2,
-    "referees": 2,
-    "ref": 2,
-    "ball": 3,
-    "soccer ball": 3
-}
-
-
 def parse_args():
-    parser = argparse.ArgumentParser(description="Download SoccerNet detection data from HuggingFace.")
+    parser = argparse.ArgumentParser(description="Download & convert SoccerNet GameState detection data from HuggingFace.")
     parser.add_argument(
         "--repo-id",
         type=str,
-        default="SoccerNet/sn-gamestate",
-        help="HuggingFace dataset repository ID (default: SoccerNet/sn-gamestate)"
+        default="SoccerNet/SN-GSR-2024",
+        help="HuggingFace dataset repository ID (default: SoccerNet/SN-GSR-2024)"
+    )
+    parser.add_argument(
+        "--archive",
+        type=str,
+        default="valid.zip",
+        choices=["valid.zip", "train.zip", "test.zip"],
+        help="Which split zip to download from HF (default: valid.zip ~3GB; train.zip is ~25GB)"
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default="data/raw/soccernet",
-        help="Target output directory for raw soccernet data"
-    )
-    parser.add_argument(
-        "--split",
-        type=str,
-        default="train",
-        choices=["train", "valid", "test", "all"],
-        help="Split to download (default: train)"
+        help="Target output directory for converted images and labels"
     )
     parser.add_argument(
         "--max-matches",
         type=int,
-        default=None,
-        help="Optional maximum number of matches/sequences to process"
+        default=5,
+        help="Maximum number of match sequences to extract and convert (default: 5; use 0 or -1 for all)"
+    )
+    parser.add_argument(
+        "--keep-zip",
+        action="store_true",
+        help="Keep downloaded zip archive after extraction (default: deletes zip to conserve disk space)"
     )
     return parser.parse_args()
 
 
 def convert_bbox_to_yolo(bbox, img_w, img_h):
     """
-    Converts [x, y, w, h] or [x1, y1, x2, y2] to YOLO normalized format:
+    Converts [x_min, y_min, width, height] to YOLO normalized format:
     x_center, y_center, width, height (0.0 to 1.0)
     """
-    # Assuming input is [x_min, y_min, width, height]
     x_min, y_min, w, h = bbox
-    x_center = (x_min + w / 2.0) / img_w
-    y_center = (y_min + h / 2.0) / img_h
-    w_norm = w / img_w
-    h_norm = h / img_h
+    xc = (x_min + w / 2.0) / img_w
+    yc = (y_min + h / 2.0) / img_h
+    wn = w / img_w
+    hn = h / img_h
 
     # Clip to valid [0.0, 1.0]
-    x_center = max(0.0, min(1.0, x_center))
-    y_center = max(0.0, min(1.0, y_center))
-    w_norm = max(0.0, min(1.0, w_norm))
-    h_norm = max(0.0, min(1.0, h_norm))
+    xc = max(0.0, min(1.0, xc))
+    yc = max(0.0, min(1.0, yc))
+    wn = max(0.0, min(1.0, wn))
+    hn = max(0.0, min(1.0, hn))
 
-    return x_center, y_center, w_norm, h_norm
+    return xc, yc, wn, hn
 
 
-def process_gamestate_annotations(dataset_path: Path, output_dir: Path, max_matches: int = None):
+def resolve_class_id(ann, categories_map):
     """
-    Processes SoccerNet-GameState sequences and converts annotations to YOLO format.
+    Resolves category from SoccerNet GameState annotations to 4 classes:
+      0: player
+      1: goalkeeper
+      2: referee
+      3: ball
     """
+    # 1. Check role in attributes
+    attributes = ann.get("attributes", {})
+    if isinstance(attributes, dict):
+        role = str(attributes.get("role", "")).lower()
+        if "goalkeeper" in role or role == "gk":
+            return 1
+        elif "referee" in role or role == "ref":
+            return 2
+        elif "player" in role:
+            return 0
+
+    # 2. Check category name from categories mapping
+    cat_id = ann.get("category_id")
+    cat_name = str(categories_map.get(cat_id, "")).lower()
+    if "goalkeeper" in cat_name or cat_name == "gk":
+        return 1
+    elif "referee" in cat_name or cat_name == "ref":
+        return 2
+    elif "ball" in cat_name:
+        return 3
+    elif "player" in cat_name or "person" in cat_name:
+        return 0
+
+    return None
+
+
+def extract_and_convert_soccernet(zip_path: Path, output_dir: Path, max_matches: int = 5):
     images_out = output_dir / "images"
     labels_out = output_dir / "labels"
     images_out.mkdir(parents=True, exist_ok=True)
     labels_out.mkdir(parents=True, exist_ok=True)
 
-    print(f"[*] Scanning for sequences in: {dataset_path}")
-    # Search for Gamestate annotation JSON files or Mot-style labels
-    annotation_files = list(dataset_path.glob("**/*Labels-gamestate.json")) + \
-                       list(dataset_path.glob("**/Labels-GameState.json")) + \
-                       list(dataset_path.glob("**/labels.json"))
+    print(f"[*] Inspecting zip archive: {zip_path.name}...")
+    with zipfile.ZipFile(zip_path, "r") as z:
+        all_files = z.namelist()
 
-    if not annotation_files:
-        print(f"[!] No standard JSON labels found directly. Checking for image folders...")
-        image_files = list(dataset_path.glob("**/*.jpg")) + list(dataset_path.glob("**/*.png"))
-        print(f"[*] Found {len(image_files)} raw images. Copying directly for staging...")
-        for img in tqdm(image_files[: (max_matches * 100 if max_matches else None)], desc="Copying images"):
-            dest = images_out / f"soccernet_{img.name}"
-            shutil.copy2(img, dest)
-        print(f"[+] Direct images staged into {images_out}")
-        return
+        # Find all JSON label files
+        label_files = [f for f in all_files if f.endswith("Labels-gamestate.json") or f.endswith("labels.json")]
+        if not label_files:
+            # Check for any json file
+            label_files = [f for f in all_files if f.endswith(".json") and not f.startswith("__MACOSX")]
 
-    processed_count = 0
-    total_images_converted = 0
+        print(f"[*] Found {len(label_files)} match sequences inside archive.")
 
-    for anno_file in annotation_files:
-        if max_matches and processed_count >= max_matches:
-            break
+        # Limit matches if requested
+        if max_matches and max_matches > 0 and len(label_files) > max_matches:
+            label_files = label_files[:max_matches]
+            print(f"[*] Extracting subset: first {len(label_files)} match sequences...")
 
-        match_id = f"soccernet_{anno_file.parent.name}"
-        try:
-            with open(anno_file, "r") as f:
-                data = json.load(f)
-        except Exception as e:
-            print(f"[!] Failed to parse {anno_file}: {e}")
-            continue
+        total_converted = 0
+        match_count = 0
 
-        images_info = {img["image_id"]: img for img in data.get("images", [])}
-        annotations = data.get("annotations", [])
-        categories = {cat["id"]: cat["name"].lower() for cat in data.get("categories", [])}
+        for lbl_file_in_zip in label_files:
+            match_folder = str(Path(lbl_file_in_zip).parent)
+            match_id = f"soccernet_{match_folder.replace('/', '_')}"
+            match_count += 1
 
-        # Group annotations by image
-        img_annos = {}
-        for ann in annotations:
-            img_id = ann.get("image_id")
-            if img_id not in img_annos:
-                img_annos[img_id] = []
-            img_annos[img_id].append(ann)
-
-        for img_id, anns in img_annos.items():
-            img_info = images_info.get(img_id)
-            if not img_info:
+            # Read JSON directly from zip
+            try:
+                with z.open(lbl_file_in_zip) as jf:
+                    data = json.load(jf)
+            except Exception as e:
+                print(f"[!] Could not read {lbl_file_in_zip}: {e}")
                 continue
 
-            img_w = img_info.get("width", 1920)
-            img_h = img_info.get("height", 1080)
-            file_name = img_info.get("file_name")
+            images_info = {img["image_id"]: img for img in data.get("images", [])}
+            annotations = data.get("annotations", [])
+            categories_map = {cat["id"]: cat["name"] for cat in data.get("categories", [])}
 
-            src_img_path = anno_file.parent / file_name
-            if not src_img_path.exists():
-                src_img_path = anno_file.parent / "img1" / file_name
+            # Group annotations by image
+            img_annos = {}
+            for ann in annotations:
+                img_id = ann.get("image_id")
+                if img_id not in img_annos:
+                    img_annos[img_id] = []
+                img_annos[img_id].append(ann)
 
-            if not src_img_path.exists():
-                continue
+            print(f"[{match_count}/{len(label_files)}] Processing match: {match_id} ({len(images_info)} frames)...")
 
-            target_img_name = f"{match_id}_{file_name.replace('/', '_')}"
-            target_lbl_name = Path(target_img_name).stem + ".txt"
+            for img_id, img_info in images_info.items():
+                file_name = img_info.get("file_name", "")
+                img_w = img_info.get("width", 1920)
+                img_h = img_info.get("height", 1080)
 
-            shutil.copy2(src_img_path, images_out / target_img_name)
+                # Candidate paths inside zip
+                possible_paths = [
+                    f"{match_folder}/{file_name}",
+                    f"{match_folder}/img1/{file_name}",
+                    f"{match_folder}/{Path(file_name).name}"
+                ]
+                actual_zip_path = None
+                for p in possible_paths:
+                    if p in all_files:
+                        actual_zip_path = p
+                        break
 
-            yolo_lines = []
-            for ann in anns:
-                cat_id = ann.get("category_id")
-                cat_name = categories.get(cat_id, "player")
-                class_id = CLASS_MAPPING.get(cat_name, 0)
+                if not actual_zip_path:
+                    continue
 
-                bbox = ann.get("bbox")  # [x, y, w, h]
-                if bbox and len(bbox) == 4:
-                    xc, yc, w, h = convert_bbox_to_yolo(bbox, img_w, img_h)
-                    yolo_lines.append(f"{class_id} {xc:.6f} {yc:.6f} {w:.6f} {h:.6f}\n")
+                clean_img_name = f"{match_id}_f{img_id:06d}.jpg"
+                dst_img = images_out / clean_img_name
+                dst_lbl = labels_out / (Path(clean_img_name).stem + ".txt")
 
-            with open(labels_out / target_lbl_name, "w") as f:
-                f.writelines(yolo_lines)
+                # Extract image to destination
+                with z.open(actual_zip_path) as src_f, open(dst_img, "wb") as out_f:
+                    shutil.copyfileobj(src_f, out_f)
 
-            total_images_converted += 1
+                # Build YOLO label lines
+                yolo_lines = []
+                for ann in img_annos.get(img_id, []):
+                    cls_id = resolve_class_id(ann, categories_map)
+                    if cls_id is None:
+                        continue
 
-        processed_count += 1
+                    bbox = ann.get("bbox")  # [x, y, w, h]
+                    if bbox and len(bbox) == 4:
+                        xc, yc, wn, hn = convert_bbox_to_yolo(bbox, img_w, img_h)
+                        yolo_lines.append(f"{cls_id} {xc:.6f} {yc:.6f} {wn:.6f} {hn:.6f}\n")
 
-    print(f"[+] Finished! Converted {total_images_converted} images across {processed_count} matches.")
-    print(f"[+] Output directory: {output_dir}")
+                with open(dst_lbl, "w") as lf:
+                    lf.writelines(yolo_lines)
+
+                total_converted += 1
+
+    print("==================================================")
+    print(f"[+] SoccerNet Ingestion Complete!")
+    print(f" Matches converted : {match_count}")
+    print(f" Total frames      : {total_converted}")
+    print(f" Output images     : {images_out}")
+    print(f" Output labels     : {labels_out}")
+    print("==================================================")
 
 
 def main():
     args = parse_args()
+
     try:
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import hf_hub_download
     except ImportError:
         print("[ERROR] download_soccernet.py requires huggingface_hub.")
         print("        Install with: pip install huggingface_hub")
         sys.exit(1)
 
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir = out_dir / "hf_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[*] Downloading dataset {args.repo_id} from Hugging Face Hub (Split: {args.split})...")
-    allow_patterns = ["*.json", "*.jpg", "*.png", "*.txt"]
-    if args.split != "all":
-        allow_patterns.append(f"*{args.split}*")
+    print("==================================================")
+    print(f" Repository : {args.repo_id}")
+    print(f" Archive    : {args.archive}")
+    print(f" Max Matches: {args.max_matches}")
+    print(f" Target Dir : {out_dir}")
+    print("==================================================")
 
+    print(f"[*] Downloading {args.archive} from Hugging Face Hub ({args.repo_id})...")
     try:
-        download_path = snapshot_download(
+        downloaded_zip = hf_hub_download(
             repo_id=args.repo_id,
+            filename=args.archive,
             repo_type="dataset",
-            allow_patterns=allow_patterns,
-            local_dir=output_dir / "hf_cache",
+            local_dir=cache_dir,
             resume_download=True
         )
-        print(f"[+] Download complete: {download_path}")
-        process_gamestate_annotations(Path(download_path), output_dir, args.max_matches)
+        print(f"[+] Download complete: {downloaded_zip}")
+        zip_path = Path(downloaded_zip)
+
+        extract_and_convert_soccernet(zip_path, out_dir, args.max_matches)
+
+        if not args.keep_zip:
+            print(f"[*] Removing downloaded zip to conserve disk space ({zip_path.stat().st_size / 1e9:.2f} GB)...")
+            zip_path.unlink(missing_ok=True)
+
     except Exception as e:
-        print(f"[!] Error downloading from Hugging Face Hub: {e}")
-        print(f"[*] Note: If running without internet or credentials, you can stage raw files directly in {output_dir}")
+        print(f"\n[ERROR] Failed during SoccerNet download/extraction: {e}")
+        print("\nPossible solutions:")
+        print("1. Ensure internet access is enabled (in Kaggle: Settings -> Internet -> ON).")
+        print("2. Run with --archive valid.zip for the fastest and most reliable download.")
+        print("3. Alternatively, run: python scripts/download_open_dataset.py for a direct 1-click dataset.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
